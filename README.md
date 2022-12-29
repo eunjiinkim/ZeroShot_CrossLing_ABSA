@@ -23,15 +23,15 @@ The below figure is an example in Spanish. \
 <img width="827" alt="스크린샷 2022-12-29 오후 10 33 39" src="https://user-images.githubusercontent.com/55074165/209961136-6c5144bc-0369-4862-83f9-a0df09167b1d.png">
  
  * Examples for each template in English. 
- * Input sentence is ‘Space was limited, but the food made up for it’ and target pairs are (space, negative) and (food, positive). \
- \
+ * Input sentence is ‘Space was limited, but the food made up for it’ and target pairs are (space, negative) and (food, positive).
+\
  ### Train
  ```
  python3 train_baseline_bilingual.py --lang {target_lang} 
  python3 train_direct_bilingual.py --lang {target_lang} 
  python3 train_indirect_bilingual.py --lang {target_lang} 
- ```
- \
+ ``` 
+
  ### Evaluation
  ```
  python3 evaluator_bioes.py
