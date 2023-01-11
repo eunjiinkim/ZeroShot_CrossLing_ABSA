@@ -1,6 +1,8 @@
 # Zero-shot Cross-lingual Aspect-Based Sentiment Analysis through a Template Re-generation Task
 
 
+
+* This is a collaborative work with [Dongjun Jang](https://github.com/qwer4107)
 ### Some codes should be fixed!
 
 Using [mBART-large-50](https://huggingface.co/facebook/mbart-large-50), we make the model fill the discrete templates with aspect and sentiment for zero-shot cross-lingual learning. \
