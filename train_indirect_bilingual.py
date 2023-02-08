@@ -13,8 +13,7 @@ import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
 from transformers import MBartForConditionalGeneration, MBart50TokenizerFast
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
-from torchtext.data.metrics import bleu_score
-from evaluator_bieos import get_score_mask_description as get_score
+from evaluator_bioes import get_score_indirect as get_score
 import random
 def seed_everything(random_seed):
     torch.manual_seed(random_seed)
@@ -48,14 +47,9 @@ parser.add_argument('--time',
                     default='past',
                     help='past or present')
     
-parser.add_argument('--separator',
-                    type=str,
-                    default='and',
-                    help='separator types')
-
 parser.add_argument('--freeze',
                     type=bool,
-                    default=False,
+                    default=True,
                     help='whether to freeze low layers of encoder')
 
 parser.add_argument('--lr',
@@ -143,18 +137,11 @@ verbal_code = {'es':['positivo', 'negativo' , 'neutral'],
                'ru':[ 'положительный', 'отрицательный', 'нейтральный']}
                
 special_code = ['<aspect>','</aspect>','<polarity>','</polarity>']
-if args.separator == 'and':
-    sep_code = {'es':'y',
+sep_code = {'es':'y',
                'en':'and',
                'fr':'et',
                'nl':'en',
                'ru':'и'}
-elif args.separator == '<and>':
-     sep_code = {'es':'<y>',
-               'en':'<and>',
-               'fr':'<et>',
-               'nl':'<en>',
-               'ru':'<и>'}
 
     
 
@@ -195,10 +182,10 @@ class ReviewDataset(Dataset):
         input_ids = self.add_padding_data(input_ids)
         
         tmp = prompt_code['en'][-1] 
-        term =[''.join(a.split()[:-1]).strip() for a in instance['labels_rm'].split('<&>')] # multiple labels are splited with <&>
+        term = instance['target'].split('<&>') # multiple labels are splited with <&>
         term = ' {} '.format(sep_code['en']).join(term)
         
-        pol =[''.join(a.split()[-1]).strip() for a in instance['labels_rm'].split('<&>')] # polarity is a last word
+        pol = instance['polarity'].split('<&>') # polarity is a last word
         pol = ' {} '.format(sep_code['en']).join(pol)
         
         pol = pol.replace('positive',verbal_code['en'][0])
@@ -222,10 +209,10 @@ class ReviewDataset(Dataset):
             input_ids_trg = self.add_padding_data(input_ids_trg)
             
             tmp_trg = prompt_code[args.lang][-1] 
-            term_trg =[''.join(a.split()[:-1]).strip() for a in instance['labels_rm_trans'].split('<&>')]
+            term_trg =instance['target_trans'].split('<&>')
             term_trg = ' {} '.format(sep_code[args.lang]).join(term_trg)
             
-            pol_trg =[''.join(a.split()[-1]).strip() for a in instance['labels_rm_trans'].split('<&>')]
+            pol_trg =instance['polarity'].split('<&>')
             pol_trg = ' {} '.format(sep_code[args.lang]).join(pol_trg)
             pol_trg = pol_trg.replace('positive',verbal_code[args.lang][0])
             pol_trg = pol_trg.replace('negative',verbal_code[args.lang][1])
@@ -395,16 +382,14 @@ if __name__ == '__main__':
     
     
     
-    if args.separator=='<and>':
-        tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50", src_lang="en_XX", tgt_lang=lang_code[args.lang],additional_special_tokens=[prompt_code['en'][0],prompt_code['en'][1],prompt_code[args.lang][0], prompt_code[args.lang][1], special_code[0], special_code[1], special_code[2], special_code[3], sep_code['en'], sep_code[args.lang]])
-    elif args.separator =='and':
-        tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50", src_lang="en_XX", tgt_lang=lang_code[args.lang],additional_special_tokens=[prompt_code['en'][0],prompt_code['en'][1],prompt_code[args.lang][0], prompt_code[args.lang][1], special_code[0], special_code[1], special_code[2], special_code[3]])
+    tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50", src_lang="en_XX", tgt_lang=lang_code[args.lang],additional_special_tokens=[prompt_code['en'][0],prompt_code['en'][1],prompt_code[args.lang][0], prompt_code[args.lang][1], special_code[0], special_code[1], special_code[2], special_code[3]])
 
-    data_module=ReviewDataModule('datasets/{}16_en_train_to_{}.tsv'.format(args.domain,args.lang),
-                              'datasets/{}16_en_test_to_{}.tsv'.format(args.domain,args.lang),tokenizer)
+    data_module=ReviewDataModule(f'datasets/{args.domain}_en_train_in_{args.lang}.tsv',                                                                    f'datasets/{args.domain}_en_validation_in_{args.lang}.tsv',
+                                 tokenizer)
     seed_everything(42)
     model = PairGenerator()
-    save_model_path = 'model_{}/{}_{}_lr={}_bs={}_sep={}_frz={}_{}_{}_mask_feeling'.format(args.lang, args.domain, args.lang, args.lr, args.batch_size, args.separator, args.freeze, args.time, args.num)
+    save_model_path = f'model_{args.lang}/{args.domain}_{args.lang}_lr={args.lr}_bs={args.batch_size}_frz={args.freeze}_indirect'
+    
     checkpoint_callback = pl.callbacks.ModelCheckpoint(monitor='val_loss',
                                                        dirpath=save_model_path,
                                                        filename='model_chp/{epoch:02d}-{val_loss:.3f}',
@@ -423,9 +408,8 @@ if __name__ == '__main__':
     model.model.save_pretrained(save_model_path+'/model')
     tokenizer.save_pretrained(save_model_path+'/model')
     ## zero-shot
-    test_df = pd.read_csv('datasets/{}16_{}_test_bieos.tsv'.format(args.domain, args.lang),sep='\t')
+    test_df = pd.read_csv(f'datasets/{args.domain}_{args.lang}_test.tsv',sep='\t')
     lang = args.lang
-    sep = args.separator
     time = args.time
     num = args.num
-    get_score(test_df, save_model_path+'/model', lang, sep, time, num)
+    get_score(test_df, save_model_path+'/model', lang, time, num)
