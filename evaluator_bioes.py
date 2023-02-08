@@ -12,41 +12,14 @@ import json
 
 lang_code = {'es': 'es_XX' , 'en': 'en_XX', 'fr':'fr_XX' , 'nl':'nl_XX', 'ru':'ru_RU' }
 
-# prompt_code = {'es':['<inicio>','<fin>',
-#                     'Sentí que <aspect> <mask> </aspect> era <polarity> <mask> </polarity>.'  
-#                     ],
-#                'en':['<start>', '<end>',
-#                     'I felt <aspect> <mask> </aspect> was <polarity> <mask> </polarity>.',],
-#                'fr':['<début>' , '<fin>',
-#                     'Je sentais que <aspect> <mask> </aspect> était <polarity> <mask> </polarity>.'],
-#                'nl':['<begin>', '<ein>',
-#                     'Ik voelde dat <aspect> <mask> </aspect> <polarity> <mask> </polarity> was.'],
-#                'ru':[ '<начало>','<конец>',
-#                     'Я чувствовал, что <aspect> <mask> </aspect> была <polarity> <mask> </polarity>.']}
 
-# prompt_code_desc = {'es':['<inicio>','<fin>',
-#                      'La polaridad de <aspect> <mask> </aspect> son <polarity> <mask> </polarity>.'
-#                     ],
-#                'en':['<start>', '<end>', 
-#                      'The polarity of <aspect> <mask> </aspect> is <polarity> <mask> </polarity>.'
-#                     ],
-#                'fr':['<début>' , '<fin>',
-#                     'La polarité de <aspect> <mask> </aspect> est <polarity> <mask> </polarity>.'
-#                     ],
-#                'nl':['<begin>', '<ein>',
-#                     'De polariteit van <aspect> <mask> </aspect> is <polarity> <mask> </polarity>.'
-#                     ],
-#                'ru':[ '<начало>','<конец>',
-#                     'Полярность <aspect> <mask> </aspect> равна <polarity> <mask> </polarity>.'
-#                     ]}
-
-verbal_code = {'es':['bueno', 'malo' , 'bien'],
+verbal_code_direct = {'es':['bueno', 'malo' , 'bien'],
                'en':['good','bad','okay'],
                'fr':['bon' , 'mauvais', 'bien'],
                'nl':['goed',  'slecht', 'oké'],
                'ru':[ 'хороша','плохой', 'порядке']}
                
-verbal_code_description = {'es':['positivo', 'negativo' , 'neutral'],
+verbal_code_indirect = {'es':['positivo', 'negativo' , 'neutral'],
                'en':['positive','negative','neutral'],
                'fr':['positif', 'négatif', 'neutre'],
                'nl':['positief', 'negatief', 'neutraal'],
@@ -66,7 +39,7 @@ def check_special_code(gen):
             return False
     return True
     
-def get_score_mask_feeling(df, model_name, lang, sep, time, num):
+def get_score_direct(df, model_name, lang, time, num):
     
     
     if time =='past' and num=='single':
@@ -125,10 +98,8 @@ def get_score_mask_feeling(df, model_name, lang, sep, time, num):
     df.dropna(inplace=True)
     df.reset_index(inplace=True,drop=True)
     spltr = sep_code[lang]
-    if sep =='<and>':
-        spltr = '<'+spltr+'>'
     prompt = prompt_code[lang][2]
-    good, bad, okay = verbal_code[lang][0], verbal_code[lang][1], verbal_code[lang][2]
+    good, bad, okay = verbal_code_direct[lang][0], verbal_code_direct[lang][1], verbal_code_direct[lang][2]
     start=250056
     model = MBartForConditionalGeneration.from_pretrained(model_name)
     model.to('cuda')
@@ -197,26 +168,77 @@ def get_score_mask_feeling(df, model_name, lang, sep, time, num):
 
            
                                                       
-    df['tags'] = tags
-    preds =[t.split() for t in df['tags'].tolist()]
-    labels =[t.split() for t in df['labels_bieos'].tolist()]
+    df['preds'] = tags
+    preds =[t.split() for t in df['preds'].tolist()]
+    labels =[t.split() for t in df['tags'].tolist()]
 
     res=seqeval_metrics.classification_report(labels, preds, output_dict=True, scheme=IOBES )
     res_float={k:{k_2:float(v_2) for k_2, v_2 in v_dict.items()} for k, v_dict in res.items()}
     print(res['micro avg']['f1-score'])
-    df[['review','labels_rm','labels_bieos','generated', 'tags']].to_csv('/'.join(model_name.split('/')[:2]) + '/inference_result_bieos_new.tsv', index=False, sep='\t')
+    df[['review','target','tags','generated', 'preds']].to_csv('/'.join(model_name.split('/')[:2]) + '/inference_result_bieos_new.tsv', index=False, sep='\t')
     with open('/'.join(model_name.split('/')[:2]) + '/result_bieos_new.json', 'w') as f:
         json.dump(res_float,f)
     f.close()
 
-def get_score_mask_description(df, model_name, lang, sep):
+def get_score_indirect(df, model_name, lang, time,num):
     df.dropna(inplace=True)
     df.reset_index(inplace=True,drop=True)
     spltr = sep_code[lang]
-    if sep =='<and>':
-        spltr = '<'+spltr+'>'
-    prompt = prompt_code_desc[lang][2]
-    good, bad, okay = verbal_code_description[lang][0], verbal_code_description[lang][1], verbal_code_description[lang][2]
+    
+    if time =='past' and num=='single':
+        prompt_code = {'es':['<inicio>','<fin>',
+                            'El sentimiento de <aspect> <mask> </aspect> era <polarity> <mask> </polarity>.'],
+                       'en':['<start>', '<end>',
+                            'The feeling of <aspect> <mask> </aspect> was <polarity> <mask> </polarity>.'],
+                       'fr':['<début>' , '<fin>',
+                            'Le sentiment de <aspect> <mask> </aspect> était <polarity> <mask> </polarity>.'],
+                       'nl':['<begin>', '<ein>',
+                            'Het gevoel van <aspect> <mask> </aspect> was <polarity> <mask> </polarity>.'],
+                       'ru':[ '<начало>','<конец>',
+                            'Ощущение <aspect> <mask> </аspect> было <polarity> <mask> </polarity>.']}
+
+    elif time=='present' and num=='single':
+         prompt_code = {'es':['<inicio>','<fin>',
+                            'El sentimiento de <aspect> <mask> </aspect> es <polarity> <mask> </polarity>.'],
+                       'en':['<start>', '<end>',
+                            'The feeling of <aspect> <mask> </aspect> is <polarity> <mask> </polarity>.'],
+                       'fr':['<début>' , '<fin>',
+                            "Le sentiment de <aspect> <mask> </aspect> est <polarity> <mask> </polarity>."],
+                       'nl':['<begin>', '<ein>',
+                            'Het gevoel van <aspect> <mask> </aspect> is <polarity> <mask> </polarity>.'],
+                       'ru':[ '<начало>','<конец>',
+                            'Ощущение <aspect> <mask> </aspect> есть <polarity> <mask> </polarity>.']}
+
+    elif time=='past' and num=='multiple':
+         prompt_code = {'es':['<inicio>','<fin>',
+                            'Los sentimientos de <aspect> <mask> </aspect> eran <polarity> <mask> </polarity>.'
+                            ],
+                       'en':['<start>', '<end>',
+                            'The feelings <aspect> <mask> </aspect> were <polarity> <mask> </polarity>.'],
+                       'fr':['<début>' , '<fin>',
+                            "Je sentais que <aspect> <mask> </aspect> étaient <polarity> <mask> </polarity>."],
+                       'nl':['<begin>', '<ein>',
+                            'De gevoelens <aspect> <mask> </aspect> waren <polarity> <mask> </polarity>.'],
+                       'ru':[ '<начало>','<конец>',
+                            'Чувства <aspect> <mask> </aspect> были <polarity> <mask> </polarity>.']}
+
+    elif time=='present' and num=='multiple':
+         prompt_code = {'es':['<inicio>','<fin>',
+                            'Los sentimientos <aspect> <mask> </aspect> son <polarity> <mask> </polarity>.'],
+                       'en':['<start>', '<end>',
+                            'The feelings of <aspect> <mask> </aspect> are <polarity> <mask> </polarity>.'],
+                       'fr':['<début>' , '<fin>',
+                            "Les sentiments <aspect> <mask> </aspect> sont <polarity> <mask> </polarity>."],
+                       'nl':['<begin>', '<ein>',
+                            'De gevoelens van <aspect> <mask> </aspect> zijn <polarity> <mask> </polarity>.'],
+                       'ru':[ '<начало>','<конец>',
+                            'Чувства <aspect> <mask> </aspect> есть <polarity> <mask> </polarity>.']}
+
+
+    
+    
+    prompt = prompt_code[lang][2]
+    good, bad, okay = verbal_code_indirect[lang][0], verbal_code_indirect[lang][1], verbal_code_indirect[lang][2]
     start=250056
     model = MBartForConditionalGeneration.from_pretrained(model_name)
     model.to('cuda')
@@ -280,21 +302,21 @@ def get_score_mask_description(df, model_name, lang, sep):
 
 
 
-    df['tags'] = tags
-    preds =[t.split() for t in df['tags'].tolist()]
-    labels =[t.split() for t in df['labels_bieos'].tolist()]
+    df['preds'] = tags
+    preds =[t.split() for t in df['preds'].tolist()]
+    labels =[t.split() for t in df['tags'].tolist()]
 
     res=seqeval_metrics.classification_report(labels, preds, output_dict=True, scheme=IOBES )
     res_float={k:{k_2:float(v_2) for k_2, v_2 in v_dict.items()} for k, v_dict in res.items()}
     print(res['micro avg']['f1-score'])
-    df[['review','labels_rm','labels_bieos','generated', 'tags']].to_csv('/'.join(model_name.split('/')[:2]) + '/inference_result_bieos.tsv', index=False, sep='\t')
+    df[['review','target','tags','generated', 'preds']].to_csv('/'.join(model_name.split('/')[:2]) + '/inference_result_bieos_new.tsv', index=False, sep='\t')
     with open('/'.join(model_name.split('/')[:2]) + '/result_bieos.json', 'w') as f:
         json.dump(res_float,f)
     f.close()
     
 
     
-def get_score_basleline(df, model_name, lang, sep):
+def get_score_basleline(df, model_name, lang):
     
 
     prompt_code = {'es':['<inicio>','<fin>'],
@@ -312,9 +334,6 @@ def get_score_basleline(df, model_name, lang, sep):
     df.dropna(inplace=True)
     df.reset_index(inplace=True,drop=True)
     spltr = sep_code[lang]
-    if sep =='<and>':
-        spltr = '<'+spltr+'>'
-#     good, bad, okay = verbal_code_description[lang][0], verbal_code_description[lang][1], verbal_code_description[lang][2]
     start=250056
     model = MBartForConditionalGeneration.from_pretrained(model_name)
     model.to('cuda')
@@ -352,16 +371,8 @@ def get_score_basleline(df, model_name, lang, sep):
                             nt=[' '.join(x.strip().split()[:-1]) for x in gens_splt]
                             np=[x.strip().split()[-1] for x in gens_splt]
                             for tt , pp in zip(nt, np):
-        #                                 p=pp.replace('.','').strip()
-        #                                 p=p.replace('good','positive')
-        #                                 p=p.replace('bad','negative')
-        #                                 p=p.replace('okay','neutral')
-        #                                 p=p.replace(good,'positive')
-        #                                 p=p.replace(bad,'negative')
-        #                                 p=p.replace(okay,'neutral')
                                         cands.append((tt.strip(), pp.strip()))
             #                 print(cands)
-        #                     bio = ['O' for _ in range(len(sent.split()))]
                             for i, word in enumerate(sent.split()):
                                         for c in cands:
                                             t, p = c[0].strip() , c[1].strip()
@@ -384,14 +395,14 @@ def get_score_basleline(df, model_name, lang, sep):
 
 
 
-    df['tags'] = tags
-    preds =[t.split() for t in df['tags'].tolist()]
-    labels =[t.split() for t in df['labels_bieos'].tolist()]
+    df['preds'] = tags
+    preds =[t.split() for t in df['preds'].tolist()]
+    labels =[t.split() for t in df['tags'].tolist()]
 
     res=seqeval_metrics.classification_report(labels, preds, output_dict=True, scheme=IOBES )
     res_float={k:{k_2:float(v_2) for k_2, v_2 in v_dict.items()} for k, v_dict in res.items()}
     print(res['micro avg']['f1-score'])
-    df[['review','labels_rm','labels_bieos','generated', 'tags']].to_csv('/'.join(model_name.split('/')[:2]) + '/inference_result_bieos.tsv', index=False, sep='\t')
+    df[['review','target','tags','generated', 'preds']].to_csv('/'.join(model_name.split('/')[:2]) + '/inference_result_bieos_new.tsv', index=False, sep='\t')
     with open('/'.join(model_name.split('/')[:2]) + '/result_bieos.json', 'w') as f:
         json.dump(res_float,f)
     f.close()
