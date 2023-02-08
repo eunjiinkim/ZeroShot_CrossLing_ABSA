@@ -28,13 +28,13 @@ The below figure is an example in Spanish. \
 \
  ### Train
  ```
- python3 train_baseline_bilingual.py --lang {target_lang} 
+ python3 train_baseline.py --lang {target_lang} 
  python3 train_direct_bilingual.py --lang {target_lang} 
  python3 train_indirect_bilingual.py --lang {target_lang} 
  ``` 
 
  ### Evaluation
- ```
- python3 evaluator_bioes.py
- ```
- * evaluation codes should be fixed.
+ - Use each function to calculate scores (evaluator_bioes.py)
+  - get_score_basleline
+  - get_score_direct
+  - get_score_indirect
