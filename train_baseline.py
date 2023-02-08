@@ -13,8 +13,7 @@ import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
 from transformers import MBartForConditionalGeneration, MBart50TokenizerFast
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
-from torchtext.data.metrics import bleu_score
-from evaluator_bieos import get_score_basleline as get_score
+from evaluator_bioes import get_score_basleline as get_score
 import random
 def seed_everything(random_seed):
     torch.manual_seed(random_seed)
@@ -38,16 +37,11 @@ parser.add_argument('--domain',
                     default='res',
                     help='review domain')
 
-    
-parser.add_argument('--separator',
-                    type=str,
-                    default='and',
-                    help='separator type')
 
 
 parser.add_argument('--freeze',
                     type=bool,
-                    default=False,
+                    default=True,
                     help='whether to freeze low layers of encoder')
 
 parser.add_argument('--lr',
@@ -79,20 +73,15 @@ args = parser.parse_args()
     
 lang_code = {'es': 'es_XX' , 'en': 'en_XX', 'fr':'fr_XX' , 'nl':'nl_XX', 'ru':'ru_RU' ,'tu':'tr_TR'}
 
-prompt_code = {'es':['<inicio>','<fin>',
-#                      'La polaridad de <aspect> <mask> </aspect> son <polarity> <mask> </polarity>.'
+prompt_code = {'es':['<inicio>','<fin>'
                     ],
-               'en':['<start>', '<end>', 
-#                      'The polarity of <aspect> <mask> </aspect> is <polarity> <mask> </polarity>.'
+               'en':['<start>', '<end>'
                     ],
-               'fr':['<début>' , '<fin>',
-#                     'La polarité de <aspect> <mask> </aspect> est <polarity> <mask> </polarity>.'
+               'fr':['<début>' , '<fin>'
                     ],
-               'nl':['<begin>', '<ein>',
-#                     'De polariteit van <aspect> <mask> </aspect> is <polarity> <mask> </polarity>.'
+               'nl':['<begin>', '<ein>'
                     ],
-               'ru':[ '<начало>','<конец>',
-#                     'Полярность <aspect> <mask> </aspect> равна <polarity> <mask> </polarity>.'
+               'ru':[ '<начало>','<конец>'
                     ]}
 
 verbal_code = {'es':['positivo', 'negativo' , 'neutral'],
@@ -101,18 +90,11 @@ verbal_code = {'es':['positivo', 'negativo' , 'neutral'],
                'nl':['positief', 'negatief', 'neutraal'],
                'ru':[ 'положительный', 'отрицательный', 'нейтральный']}
                
-if args.separator == 'and':
-    sep_code = {'es':'y',
+sep_code = {'es':'y',
                'en':'and',
                'fr':'et',
                'nl':'en',
                'ru':'и'}
-elif args.separator == '<and>':
-     sep_code = {'es':'<y>',
-               'en':'<and>',
-               'fr':'<et>',
-               'nl':'<en>',
-               'ru':'<и>'}
 
                
 
@@ -145,27 +127,38 @@ class ReviewDataset(Dataset):
             inputs = inputs[:self.max_len]
 
         return inputs
-    
+    def get_pair(self, instance, pol_list, sep_code):
+        pair=[]
+        for aspect, polarity in zip(instance['target'].split('<&>'), instance['polarity'].split('<&>')):
+            if polarity=='positive':
+                pair.append(aspect + ' ' + pol_list[0])
+            elif polarity=='negative':
+                pair.append(aspect + ' ' + pol_list[1])
+            else:
+                pair.append(aspect + ' ' + pol_list[2])
+                
+        pair = f' {sep_code} '.join(pair)
+        return pair.strip()
+    def get_pair_trans(self, instance, pol_list, sep_code):
+        pair=[]
+        for aspect, polarity in zip(instance['target_trans'].split('<&>'), instance['polarity'].split('<&>')):
+            if polarity=='positive':
+                pair.append(aspect + ' ' + pol_list[0])
+            elif polarity=='negative':
+                pair.append(aspect + ' ' + pol_list[1])
+            else:
+                pair.append(aspect + ' ' + pol_list[2])
+                
+        pair = f' {sep_code} '.join(pair)
+        return pair.strip()
     def __getitem__(self, idx):
         instance = self.docs.iloc[idx]
         input_ids = self.tokenizer.encode(instance['review']+' </s> ')
         input_ids = self.add_padding_data(input_ids)
         
+        pair = self.get_pair(instance, verbal_code['en'], sep_code['en'])
         
-#         term =[''.join(a.split()[:-1]).strip() for a in instance['labels_rm'].split('<&>')] # multiple labels are splited with <&>
-# #         term = ' and '.join(term)
-        
-#         pol =[''.join(a.split()[-1]).strip() for a in instance['labels_rm'].split('<&>')] # polarity is a last word
-#         pol = ' and '.join(pol)
-        
-#         pol = pol.replace('positive',verbal_code['en'][0])
-#         pol = pol.replace('negative',verbal_code['en'][1])
-#         pol = pol.replace('neutral',verbal_code['en'][2])
-        
-#         pair = [t + ' ' + p for t,p in zip(term,pol)]
-#         pair = ' and '.join(pair)
-        pair = instance['labels_rm'].replace('<&>', sep_code['en'])
-#         print(tmp)
+#        pair = instance['target'].replace('<&>', sep_code['en'])
         target = prompt_code['en'][0] + ' ' + pair + ' ' + prompt_code['en'][1]
 
         label_ids = self.tokenizer.encode(target)
@@ -179,21 +172,9 @@ class ReviewDataset(Dataset):
             input_ids_trg = self.tokenizer.encode(instance['review']+' </s> ')
             input_ids_trg = self.add_padding_data(input_ids_trg)
             
-#             tmp_trg = prompt_code[args.lang][-1] 
-#             term_trg =[''.join(a.split()[:-1]).strip() for a in instance['labels_rm_trans'].split('<&>')]
-#             term_trg = ' {} '.format(sep_code[args.lang]).join(term_trg)
-            
-#             pol_trg =[''.join(a.split()[-1]).strip() for a in instance['labels_rm_trans'].split('<&>')]
-#             pol_trg = ' {} '.format(sep_code[args.lang]).join(pol_trg)
-#             pol_trg = pol_trg.replace('positive',verbal_code[args.lang][0])
-#             pol_trg = pol_trg.replace('negative',verbal_code[args.lang][1])
-#             pol_trg = pol_trg.replace('neutral',verbal_code[args.lang][2])
-            
-#             pair_trg = [t + ' ' + p for t,p in zip(term_trg,pol_trg)]
-#             pair_trg = ' {} '.format(sep_code[args.lang]).join(pair)
-            
-            # I felt service was bad.
-            pair_trg = instance['labels_rm'].replace('<&>', sep_code[args.lang])
+#            pair_trg = instance['target_trans'].replace('<&>', sep_code[args.lang])
+            # without template, so verbalizer is in english
+            pair_trg = self.get_pair_trans(instance, verbal_code['en'], sep_code['en'])
             target_trg = prompt_code[args.lang][0] + ' ' + pair_trg + ' ' + prompt_code[args.lang][1]
             
             label_ids_trg = self.tokenizer.encode(target_trg)
@@ -334,13 +315,11 @@ class PairGenerator(Base):
 
     def training_step(self, batch, batch_idx):
         outs = self(batch)
-#         loss = outs.loss
         self.log('train_loss', outs, prog_bar=True)
         return outs
 
     def validation_step(self, batch, batch_idx):
         outs = self(batch)
-#         loss = outs['loss']
         return (outs)
 
     def validation_epoch_end(self, outputs):
@@ -354,16 +333,12 @@ class PairGenerator(Base):
 if __name__ == '__main__':
     
     
-    if args.separator=='<and>':
-         tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50", src_lang="en_XX", tgt_lang=lang_code[args.lang],additional_special_tokens=[prompt_code['en'][0],prompt_code['en'][1],prompt_code[args.lang][0], prompt_code[args.lang][1],sep_code['en'],sep_code[args.lang]])
-    else:
-        tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50", src_lang="en_XX", tgt_lang=lang_code[args.lang],additional_special_tokens=[prompt_code['en'][0],prompt_code['en'][1],prompt_code[args.lang][0], prompt_code[args.lang][1]])
-
-    data_module=ReviewDataModule('datasets/{}16_en_train_to_{}.tsv'.format(args.domain,args.lang),
-                              'datasets/{}16_en_test_to_{}.tsv'.format(args.domain,args.lang),tokenizer)
+    tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50", src_lang="en_XX", tgt_lang=lang_code[args.lang],additional_special_tokens=[prompt_code['en'][0],prompt_code['en'][1],prompt_code[args.lang][0], prompt_code[args.lang][1]])
+    data_module=ReviewDataModule(f'datasets/{args.domain}_en_train_in_{args.lang}.tsv',                                                                    f'datasets/{args.domain}_en_validation_in_{args.lang}.tsv',
+                                 tokenizer)
     seed_everything(42)
     model = PairGenerator()
-    save_model_path = 'model_{}/{}_{}_lr={}_bs={}_sep={}_frz={}_baseline'.format(args.lang, args.domain, args.lang, args.lr, args.batch_size, args.separator, args.freeze)
+    save_model_path = f'model_{args.lang}/{args.domain}_{args.lang}_lr={args.lr}_bs={args.batch_size}_frz={args.freeze}_baseline'
     checkpoint_callback = pl.callbacks.ModelCheckpoint(monitor='val_loss',
                                                        dirpath=save_model_path,
                                                        filename='model_chp/{epoch:02d}-{val_loss:.3f}',
@@ -382,8 +357,7 @@ if __name__ == '__main__':
     model.model.save_pretrained(save_model_path+'/model')
     tokenizer.save_pretrained(save_model_path+'/model')
     ## zero-shot
-    test_df = pd.read_csv('datasets/{}16_{}_test_bieos.tsv'.format(args.domain, args.lang),sep='\t')
+    test_df = pd.read_csv(f'datasets/{args.domain}_{args.lang}_test.tsv',sep='\t')
     lang = args.lang
     
-    sep = args.separator
-    get_score(test_df, save_model_path+'/model', lang,sep)
+    get_score(test_df, save_model_path+'/model', lang)
