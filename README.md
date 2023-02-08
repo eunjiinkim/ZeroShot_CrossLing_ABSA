@@ -35,6 +35,6 @@ The below figure is an example in Spanish. \
 
  ### Evaluation
  - Use each function to calculate scores (evaluator_bioes.py)
-  - get_score_basleline
-  - get_score_direct
-  - get_score_indirect
+   - get_score_basleline
+   - get_score_direct
+   - get_score_indirect
